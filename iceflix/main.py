@@ -1,5 +1,10 @@
-"""Module containing a template for a main service."""
+'''
+    Module created to implement the main service
+    By: Juan Tomás Araque Martínez
+        and Ángel García Collado
+'''
 
+from distutils.log import error
 import logging
 import uuid
 import random
@@ -23,11 +28,10 @@ MY_ADMIN_TOKEN = "admin"
 APP = None
 
 class Main(IceFlix.Main):
-    """Servant for the IceFlix.Main interface.
-
-    Disclaimer: this is demo code, it lacks of most of the needed methods
-    for this interface. Use it with caution
-    """
+    # pylint: disable=W0613
+    # pylint: disable=R0201
+    # pylint: disable=W0702
+    """Servant for the IceFlix.Main interface."""
 
     def __init__(self):
         """Create the Main servant instance."""
@@ -37,7 +41,6 @@ class Main(IceFlix.Main):
         """Share the current database with an incoming service."""
         service.updateDB(None, self.service_id)
 
-    #Authenticator* getAuthenticator() throws TemporaryUnavailable;
     def getAuthenticator(self, current=None):
         """ Returns a valid authenticator proxy"""
         if len(APP.subscriber.authenticators.keys()) < 1:
@@ -50,7 +53,6 @@ class Main(IceFlix.Main):
         except Ice.LocalException:
             raise IceFlix.TemporaryUnavailable()
 
-    # MediaCatalog* getCatalog() throws TemporaryUnavailable;
     def getCatalog(self, current=None):
         """ Returns a valid catalog proxy"""
         if len(APP.subscriber.catalogs.keys()) < 1:
@@ -63,21 +65,26 @@ class Main(IceFlix.Main):
         except Ice.LocalException:
             raise IceFlix.TemporaryUnavailable()
 
-    # void updateDB(VolatileServices currentServices, string srvId) throws UnknownService;
     def updateDB(self, values, service_id, current=None):  # pylint: disable=invalid-name,unused-argument
         """Receives the current main service database from a peer."""
         logging.info(
             "Receiving remote data base from %s to %s", service_id, self.service_id
         )
 
-    # bool isAdmin(string adminToken);
     def isAdmin(self, adminToken, current=None):
         """ Returns if a given adminToken is correct"""
         if MY_ADMIN_TOKEN == adminToken:
             return True
         return False
 
+    # pylint: enable=W0613
+    # pylint: enable=R0201
+    # pylint: enable=W0702
 class MainApp(Ice.Application):
+    # pylint: disable=W0221
+    # pylint: disable=W0613
+    # pylint: disable=R0201
+    # pylint: disable=W0702
     """ Ice.Application for a Main service."""
 
     def __init__(self):
@@ -114,6 +121,19 @@ class MainApp(Ice.Application):
         subscriber_prx = self.adapter.addWithUUID(self.subscriber)
         topic.subscribeAndGetPublisher({}, subscriber_prx)
 
+    def check_token(self, args):
+        """Check if the given token is the admin one"""
+        if len(args) != 3:
+            error("Incorrect number of arguments")
+            self.announcer.stop()
+            raise SystemExit
+
+        admin_token_given = args[1]
+        if not self.proxy.isAdmin(admin_token_given):
+            error("Admin token given is incorrect")
+            self.announcer.stop()
+            raise SystemExit
+
     def run(self, args):
         """Run the application, adding the needed objects to the adapter."""
         logging.info("Running Main application")
@@ -122,7 +142,8 @@ class MainApp(Ice.Application):
         self.adapter.activate()
 
         self.proxy = self.adapter.addWithUUID(self.servant)
-
+        print("Main Proxy: " + comm.proxyToString(self.proxy))
+        self.check_token(args)
         self.setup_announcements()
         self.announcer.start_service()
 
@@ -132,6 +153,10 @@ class MainApp(Ice.Application):
         self.announcer.stop()
         return 0
 
+    # pylint: enable=W0221
+    # pylint: enable=W0613
+    # pylint: enable=R0201
+    # pylint: enable=W0702
 if __name__ == "__main__":
     APP = MainApp()
     sys.exit(APP.main(sys.argv))

@@ -65,11 +65,16 @@ class Main(IceFlix.Main):
         except Ice.LocalException:
             raise IceFlix.TemporaryUnavailable()
 
-    def updateDB(self, values, service_id, current=None):  # pylint: disable=invalid-name,unused-argument
+    def updateDB(self, currentServices, service_id, current=None):  # pylint: disable=invalid-name,unused-argument
         """Receives the current main service database from a peer."""
         logging.info(
             "Receiving remote data base from %s to %s", service_id, self.service_id
         )
+        if service_id in APP.subscriber.mains.keys():
+            for auth in currentServices.authenticators:
+                APP.subscriber.authenticators.append(auth)
+            for catalog in currentServices.catalogs:
+                APP.subscriber.catalogs.append(catalog)
 
     def isAdmin(self, adminToken, current=None):
         """ Returns if a given adminToken is correct"""

@@ -226,7 +226,7 @@ class MediaCatalog(IceFlix.MediaCatalog):
         self.catalog_updates_prx.renameTile(media_id, name, self.service_id)
         
     def updateDB(self, catalog_database, service_id, current=None):
-        if not service_id in self.servant_serv_announ.catalogs.keys():
+        if not service_id in self.servant_serv_announ.known_ids:
             raise IceFlix.UnknownService()
         if not self.is_updated:
             data = {}
@@ -241,7 +241,7 @@ class CatalogUpdates(IceFlix.CatalogUpdates):
         self.servant = None
     def renameTile(self, media_id, name, service_id, current=None):
         #Check service
-        if service_id in self.servant_serv_announ.catalogs.keys() and service_id != self.servant.service_id:
+        if service_id in self.servant_serv_announ.known_ids and service_id != self.servant.service_id:
             data = openDB(self.servant.path_db)
         try:
             checkMediaId(media_id, data)
@@ -254,7 +254,7 @@ class CatalogUpdates(IceFlix.CatalogUpdates):
 
     def addTags(self, media_id, tags, user, service_id, current=None):
 
-        if service_id in self.servant_serv_announ.catalogs.keys() and service_id != self.servant.service_id:
+        if service_id in self.servant_serv_announ.known_ids and service_id != self.servant.service_id:
             data = openDB(self.servant.path_db)
         try:
             checkMediaUser(data, user, media_id)
@@ -268,7 +268,7 @@ class CatalogUpdates(IceFlix.CatalogUpdates):
         writeDB(self.servant.path_db, data)
 
     def removeTags(self, media_id, tags, user, service_id, current=None):
-        if service_id in self.servant_serv_announ.catalogs.keys() and service_id != self.servant.service_id:
+        if service_id in self.servant_serv_announ.known_ids and service_id != self.servant.service_id:
             data = openDB(self.servant.path_db)
         try:
             checkMediaUser(data, user, media_id)
@@ -282,10 +282,25 @@ class CatalogUpdates(IceFlix.CatalogUpdates):
         writeDB(self.servant.path_db, data)
 
 class StreamAnnouncements(IceFlix.StreamAnnouncements):
+    def __init__(self):
+        self.servant_serv_announ = None
+        self.servant = None
+
     def newMedia(self, media_id, initial_name, service_id, current=None):
-        print()
+        if service_id in self.servant_serv_announ.known_ids:
+            logging.info(f"Receiving {initial_name}")
+            data = openDB(self.servant.path_db)
+            data["info"][media_id] = initial_name
+            self.servant.media_providers[media_id] = self.servant_serv_announ.providers[service_id]
+            writeDB(self.servant.path_db, data)
+
     def removedMedia(self, media_id, service_id, current=None):
-        print()
+        if service_id in self.servant_serv_announ.known_ids:
+            logging.info(f"Deleting {service_id}")
+            data = openDB(self.servant.path_db)
+            del data["info"][media_id]
+            del self.servant.media_providers[media_id] 
+            writeDB(self.servant.path_db, data)
 
 class CatalogApp(Ice.Application):
     def __init__(self):

@@ -24,6 +24,18 @@ from service_announcement import (
     ServiceAnnouncementsListener,
     ServiceAnnouncementsSender,
 )
+
+def getTopic(communicator, topic_name):
+    topic_manager = IceStorm.TopicManagerPrx.checkedCast(
+        communicator.propertyToProxy("IceStorm.TopicManager"),
+    )
+    try:
+        topic = topic_manager.create(topic_name)
+    except IceStorm.TopicExists:
+        topic = topic_manager.retrieve(topic_name)
+
+    return topic
+
 def createDB(service_id):
     msg = "Catalog " + service_id + " creating DB"
     logging.info(msg)
@@ -312,6 +324,40 @@ class CatalogApp(Ice.Application):
         self.adapter = broker.createObjectAdapter("Catalog")
         self.adapter.activate()
 
+        #Subscriptions
+        #StreamAnnouncements
+        stream_announ_topic = getTopic(broker, "StreamAnnouncements")
+        servant_stream_announ = StreamAnnouncements()
+        stream_announ_prx = self.adapter.addWithUUID(servant_stream_announ)
+        stream_announ_topic.subscribeAndGetPublisher({}, stream_announ_prx)
+
+        #CatalogUpdates
+        catalog_updates_topic = getTopic(broker, "CatalogUpdates")
+        servant_catalog_updates = CatalogUpdates()
+        catalog_updates_prx = self.adapter.addWithUUID(servant_catalog_updates)
+        catalog_updates_topic.subscribeAndGetPublisher({}, catalog_updates_prx)
+
+        catalog_updates_pub = catalog_updates_topic.getPublisher()
+        catalog_updates_pub = IceFlix.CatalogUpdatesPrx.uncheckedCast(catalog_updates_pub)
+
+        #Service Announcements
+        serv_announcements_topics = getTopic(broker, "ServiceAnnouncements")
+        self.servant_serv_announcements = ServiceAnnouncementsListener(self.servant,self.servant.service_id, IceFlix.AuthenticatorPrx)
+        serv_announcements_prx = self.adapter.addWithUUID(self.servant_serv_announcements)
+        serv_announcements_topics.subscribeAndGetPublisher({}, serv_announcements_prx)
+
+        self.serv_announcements_sender = ServiceAnnouncementsSender(serv_announcements_topics,self.servant.service_id, self.proxy)
+
+        self.servant.catalog_updates_prx = catalog_updates_pub
+        self.servant.servant_serv_announ = self.servant_serv_announcements
+
+        servant_catalog_updates.servant = self.servant
+        servant_catalog_updates.servant_serv_announ = self.servant_serv_announcements
+
+        servant_stream_announ.servant = self.servant
+        servant_stream_announ.servant_serv_announ = self.servant_serv_announcements
+
+        self.proxy = self.adapter.addWithUUID(self.servant)
         logging.info(self.proxy)
         self.shutdownOnInterrupt()
         broker.waitForShutdown()

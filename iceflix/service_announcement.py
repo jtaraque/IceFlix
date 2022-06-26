@@ -40,6 +40,7 @@ class ServiceAnnouncementsListener(IceFlix.ServiceAnnouncements):
         self.authenticators = {}
         self.catalogs = {}
         self.mains = {}
+        self.providers = {}
         self.known_ids = set()
 
     def newService(
@@ -67,14 +68,21 @@ class ServiceAnnouncementsListener(IceFlix.ServiceAnnouncements):
 
         if service.ice_isA("::IceFlix::Main"):
             self.mains[service_id] = IceFlix.MainPrx.uncheckedCast(service)
+            self.known_ids.add(service_id)
 
         elif service.ice_isA("::IceFlix::Authenticator"):
             self.authenticators[service_id] = IceFlix.AuthenticatorPrx.uncheckedCast(
                 service
             )
+            self.known_ids.add(service_id)
 
         elif service.ice_isA("::IceFlix::MediaCatalog"):
             self.catalogs[service_id] = IceFlix.MediaCatalogPrx.uncheckedCast(service)
+            self.known_ids.add(service_id)
+
+        elif service.ice_isA("::IceFlix::StreamProvider"):
+            self.providers[service_id] = IceFlix.StreamProviderPrx.uncheckedCast(service)
+            self.known_ids.add(service_id)
 
         else:
             logging.info(

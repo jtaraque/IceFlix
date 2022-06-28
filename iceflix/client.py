@@ -5,6 +5,7 @@
 '''
 
 from distutils.log import error
+from http.client import TEMPORARY_REDIRECT
 import logging
 import os
 import sys
@@ -63,7 +64,19 @@ class Revocations(IceFlix.Revocations):
                 error("Los datos de usuario no son correctos")
 
 class MediaUploader(IceFlix.MediaUploader):
-    print()
+    def __init__(self, file):
+        logging.debug(f"Serving file: {file}")
+        self._filename_ = file
+        self._fd_ = open(file, "rb") 
+    
+    def receive(self, size, current=None):
+        chunk = self._fd_.read(size)
+        return chunk
+
+    def close(self, current=None):
+        self._fd_.close()
+        current.adapter.remove(current.id)
+
 class ClientApp(Ice.Application):
 
     def __init__(self):
@@ -74,6 +87,29 @@ class ClientApp(Ice.Application):
         self.user = {}
         self.player = None
         self.stream_controller_prx = None
+
+    def selectMedia(self):
+        old_media = input("Introduzca la ruta del medio: ")
+        if not os.path.isfile(old_media) and not old_media.endswith(".mp4"):
+            error("La ruta introducida no es correcta")
+            return None, None
+        tile = old_media.split("/")[-1]
+        new_media = "./media"+tile
+        if not os.path.exists(new_media):
+            return old_media, new_media
+        error("Ya existe un archivo con ese nombre en nuestra base de datos")
+        
+    def renameMedia(self, catalog_prx, media):
+        new_name = input("Introduzca el nuevo nombre del medio")
+        try:
+            catalog_prx.renameTile(media.mediaId, new_name, self.admin_token)
+        except IceFlix.Unauthorized:
+            logging.error("El token de administración no es válido")
+        except IceFlix.WrongMediaId:
+            logging.error("El id del medio proporcionado no es correcto")
+        except Ice.NotRegisteredException:
+            logging.error("Error durante el cambio de nombre")
+        return new_name
 
     def play(self, media):
         stream_provider_prx = media.provider
@@ -91,9 +127,9 @@ class ClientApp(Ice.Application):
         self.player.play(uri)
 
     def edit_tags(self, catalog_prx, media):
-        election = self.numQuestion(
+        selection = self.numQuestion(
             "¿Qué quiere hacer?\n1. Añadir tags\n2. Eliminar tags\n", list(range(1, 3)))
-        if election == 1:
+        if selection == 1:
             new_tags = input("Introduzca los nuevo tags: ")
             new_tags_list = new_tags.split(", ")
             try:
@@ -104,7 +140,7 @@ class ClientApp(Ice.Application):
                 error("Id del medio no válido")
             except Ice.LocalException:
                 error("Servicio de catálogo no disponible")
-        elif election == 2:
+        elif selection == 2:
             remove_tags = input("Introduzca los tags a eliminar: ")
             remove_tags_list = remove_tags.split(", ")
             try:
@@ -181,15 +217,112 @@ class ClientApp(Ice.Application):
         return int(num)
 
     def admin1(self):
-        print()
+        print("Indique el usuario y la contraseña")
+        user = input("Usuario: ")
+        password = getpass.getpass("Contraseña: ")
+        pass_encoded = hashlib.sha256(password.encode()).hexdigest()
+        try:
+            auth_prx = self.main_prx.getAuthenticator()
+            auth_prx.addUser(user, pass_encoded, self.admin_token)
+        except IceFlix.TemporaryUnavailable:
+            logging.error(
+                "Servicio de autenticación no disponible.")
+        except IceFlix.Unauthorized:
+            logging.error("Error al añadir el usuario. Token de administración incorrecto")
+        except Ice.LocalException:
+            error("Error al conectar con el servidor principal")
+            self.main_prx = self.reconnect(self.main_prx)
+            if not self.main_prx:
+                error("No se pudo conectar con el servidor principal")
+                raise SystemExit
+
     def admin2(self):
-        print()
+        print("Indique el usuario que va a eliminar")
+        user = input("Usuario: ")
+        try:
+            auth_prx = self.main_prx.getAuthenticator()
+            auth_prx.removeUser(user, self.admin_token)
+        except IceFlix.TemporaryUnavailable:
+            logging.error(
+                "Servicio de autenticación no disponible.")
+        except IceFlix.Unauthorized:
+            logging.error("Error al eliminar el usuario. Token de administración incorrecto")
+        except Ice.LocalException:
+            error("Error al conectar con el servidor principal")
+            self.main_prx = self.reconnect(self.main_prx)
+            if not self.main_prx:
+                error("No se pudo conectar con el servidor principal")
+                raise SystemExit
+
     def admin3(self):
-        print()
+        print("Busque por nombre el medio que desea renombrar")
+        try:
+            catalog_prx = self.main_prx.getCatalog()
+            media = self.search_by_tile(catalog_prx)
+            if len(media) > 0:
+                self.show_media(media)
+                media_selection = self.numQuestion(
+                    "Seleccione el medio que desea renombrar",
+                    list(range(len(media))))
+                new_name = self.renameMedia(catalog_prx, media[media_selection])
+                old_name = "./media"+media[media_selection].info.name+".mp4"
+                os.rename(old_name,new_name)
+        except IceFlix.TemporaryUnavailable:
+            error("El servidor de catálogo no se encuentra disponible")
+        except Ice.LocalException:
+            error("Error al conectar con el servidor principal")
+            self.main_prx = self.reconnect(self.main_prx)
+            if not self.main_prx:
+                error("No se pudo conectar con el servidor principal")
+                raise SystemExit
+
     def admin4(self):
-        print()
+        old_path, new_path = self.selectMedia()
+        if old_path and new_path:
+            servant_uploader = MediaUploader(old_path)
+            uploader_prx = self.adapter.addWithUUID(servant_uploader)
+            uploader_prx = IceFlix.MediaUploaderPrx.uncheckedCast(uploader_prx)
+            stream_provider_prx_str = input("Introduzca un proxy válido de Stream Provider")
+            stream_provider_prx = self.broker.stringToProxy(stream_provider_prx_str)
+            stream_provider_prx = IceFlix.StreamProviderPrx.uncheckedCast(stream_provider_prx)
+            try:
+                stream_provider_prx.uploadMedia(old_path, uploader_prx, self.admin_token)
+            except IceFlix.UploadError:
+                logging.error("Error al subir el medio")
+            except IceFlix.Unauthorized:
+                logging.error(
+                    "El token de administración no es válido")
+            except Ice.LocalException:
+                error("El servidor de streaming no se encuentra disponible")
+
     def admin5(self):
-        print()
+        print("Busque por nombre el medio que desea eliminar")
+        try:
+            catalog_prx = self.main_prx.getCatalog()
+            media = self.search_by_tile(catalog_prx)
+            if len(media) > 0:
+                self.show_media(media)
+                media_selection = self.numQuestion(
+                    "Seleccione el medio que desea eliminar",
+                    list(range(len(media))))
+                stream_provider_prx = media[media_selection].provider
+                stream_provider_prx.deleteMedia(media[media_selection].mediaId, self.admin_token)
+                media_path = "./media"+media[media_selection].info.name+".mp4"
+                os.remove(media_path)
+        except IceFlix.Unauthorized:
+            logging.error("Operación no autorizada")
+        except IceFlix.WrongMediaId:
+            logging.error("El id del medio proporcionado no es correcto")
+        except IceFlix.TemporaryUnavailable:
+            logging.error(
+                "El servicio de catálogo no se encuentra disponible.")
+        except Ice.LocalException:
+            error("Error al conectar con el servidor principal")
+            self.main_prx = self.reconnect(self.main_prx)
+            if not self.main_prx:
+                error("No se pudo conectar con el servidor principal")
+                raise SystemExit
+
     def opcion1(self):
         """Method to login the user"""
         user = input("Usuario: ")
@@ -220,6 +353,7 @@ class ClientApp(Ice.Application):
             if not self.main_prx:
                 error("No se pudo conectar con el servidor principal")
                 raise SystemExit
+
     def opcion2(self):
         try:
             catalog_prx = self.main_prx.getCatalog()
@@ -236,19 +370,19 @@ class ClientApp(Ice.Application):
             if len(media) > 0:
                 self.show_media(media)
                 if self.user["token"]:
-                    election = self.numQuestion(
+                    selection = self.numQuestion(
                         "¿Qué desea hacer?\n1. Editar los tags\n2. Reproducir\n3. Nada\n",
                         list(range(1, 4)))
-                    if election == 1:
-                        media_election = self.numQuestion(
+                    if selection == 1:
+                        media_selection = self.numQuestion(
                             "Seleccione el medio del que quiere editar sus tags\n",
                             list(range(len(media))))
-                        self.edit_tags(catalog_prx, media[media_election])
-                    elif election == 2:
-                        media_election = self.numQuestion(
+                        self.edit_tags(catalog_prx, media[media_selection])
+                    elif selection == 2:
+                        media_selection = self.numQuestion(
                             "Seleccione el medio que quiere reproducir\n",
                             list(range(len(media))))
-                        self.play(media[media_election])
+                        self.play(media[media_selection])
         except IceFlix.WrongMediaId:
             logging.error("El id del medio proporcionado no es correcto")
         except IceFlix.Unauthorized:

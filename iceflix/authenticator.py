@@ -3,6 +3,17 @@
     By: Juan Tomás Araque Martínez
         and Ángel García Collado
 '''
+# pylint: disable=C0411
+# pylint: disable=C0113
+# pylint: disable=E0401
+# pylint: disable=C0103
+# pylint: disable=C0413
+# pylint: disable=R0801
+# pylint: disable=W0611
+# pylint: disable=E1101
+# pylint: disable=C0116
+# pylint: disable=W0613
+# pylint: disable=W0707
 
 from distutils.log import error
 import logging
@@ -29,11 +40,14 @@ from service_announcement import (
 )
 
 def readJSON():
+    # pylint: disable=W1514
     with open("./users.json") as db:
         data = json.load(db)
     return data
 
 def writeJSON(data):
+    # pylint: disable=W1514
+    # pylint: disable=R1732
     db = open("./users.json", "w")
     json.dump(data, db, indent=6)
 
@@ -49,7 +63,7 @@ def getTopic(communicator, topic_name):
     return topic
 
 class Authenticator(IceFlix.Authenticator):
-
+    ''' Class authenticator'''
     def __init__(self) -> None:
         self.service_id = str(uuid.uuid4())
         self.user_tokens = {}
@@ -138,22 +152,22 @@ class Authenticator(IceFlix.Authenticator):
             self.is_updated = True
 
 class UserUpdates(IceFlix.UserUpdates):
-
+    ''' Class to update users and tokens'''
     def __init__(self) -> None:
         self.serv_auth = None
         self.serv_subscriber = None
 
     def newUser(self, user, passwordHash, srvId, current=None):
-        if srvId in self.serv_subscriber.known_ids:  
+        if srvId in self.serv_subscriber.known_ids:
             self.serv_auth.users_passwords[user] = passwordHash
             writeJSON(self.serv_auth.users_passwords)
 
     def newToken(self, user, userToken, srvId, current=None):
-        if srvId in self.serv_subscriber.known_ids:   
+        if srvId in self.serv_subscriber.known_ids:
             self.serv_auth.user_tokens[user] = userToken
 
 class Revocations(IceFlix.Revocations):
-
+    ''' Class used to revocate tokens and users '''
     def __init__(self) -> None:
         self.serv_auth = None
         self.serv_subscriber = None
@@ -171,6 +185,7 @@ class Revocations(IceFlix.Revocations):
             writeJSON(self.serv_auth.user_passwords)
 
 class AuthApp(Ice.Application):
+    ''' Class used to authenticate'''
     def __init__(self):
         self.servant = Authenticator()
         self.proxy = None
@@ -235,7 +250,7 @@ class AuthApp(Ice.Application):
 
 
         #Authenticator attributes
-        
+
         self.servant.servant_serv_announ = self.subscriber
         self.servant.revocations_prx = revocations_pub
         self.servant.updates_prx = user_updates_pub
@@ -248,7 +263,6 @@ class AuthApp(Ice.Application):
         servant_revocations.serv_auth = self.servant
         servant_revocations.serv_subscriber = self.subscriber
 
-       
         logging.info(self.proxy)
         self.shutdownOnInterrupt()
         broker.waitForShutdown()

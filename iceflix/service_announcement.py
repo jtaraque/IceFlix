@@ -47,6 +47,7 @@ class ServiceAnnouncementsListener(IceFlix.ServiceAnnouncements):
     def newService(
         self, service, service_id, current
     ):  # pylint: disable=invalid-name,unused-argument
+        # pylint: disable=C0301
         """Receive the announcement of a new started service."""
         if service_id == self.service_id:
             logging.debug("Received own announcement. Ignoring")
@@ -92,28 +93,30 @@ class ServiceAnnouncementsListener(IceFlix.ServiceAnnouncements):
                 service_id,
                 service.ice_ids(),
             )
+    # pylint: disable=C0103
     def checkServices(self):
+        # pylint: disable=C0201
         for main in self.mains.keys():
             try:
                 self.mains[main].ice_ping()
             except Ice.LocalException:
                 del self.mains[main]
                 self.known_ids.remove(main)
-
+        # pylint: disable=C0201
         for auth in self.authenticators.keys():
             try:
                 self.authenticators[auth].ice_ping()
             except Ice.LocalException:
                 del self.authenticators[auth]
                 self.known_ids.remove(auth)
-
+        # pylint: disable=C0201
         for catalog in self.catalogs.keys():
             try:
                 self.catalogs[catalog].ice_ping()
             except Ice.LocalException:
                 del self.catalogs[catalog]
                 self.known_ids.remove(catalog)
-
+        # pylint: disable=C0201
         for provider in self.providers.keys():
             try:
                 self.providers[provider].ice_ping()
@@ -127,7 +130,6 @@ class ServiceAnnouncementsSender:
 
     def __init__(self, topic, service_id, servant_proxy):
         """Initialize a ServiceAnnoucentsSender.
-        
         The `topic` argument should be a IceStorm.TopicPrx object.
         The `service_id` should be the unique identifier of the announced proxy
         The `servant_proxy` should be a object proxy to the servant.

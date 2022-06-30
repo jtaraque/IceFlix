@@ -1,33 +1,19 @@
-# Template project for ssdd-lab
+# IceFlix
 
-This repository is a Python project template. It contains the
-following files and directories:
+Autores:  
+Juan Tomás Araque Martínez  
+Ángel García Collado
 
-- `config` has several configuration files examples, including needed
-  IceStorm configuration files.
-- `iceflix` is the main Python package. You could rename it to
-  something meaninful for your project.
-- `iceflix/__init__.py` is an empty file needed by Python to
-  recognise the `packagename` directory as a Python package/module.
-- `iceflix/cli.py` contains several functions that can handle the
-  basic console entry points defined in `python.cfg`. The name of the
-  submodule and the functions can be modified if you need.
-- `iceflix/iceflix.ice` contains the Slice interface definition for
-  the project.
-- `iceflix/main.py` has a minimal implementation of a service, without
-  the service servant itself. Can be used as template for main or other
-  services.
-- `iceflix/rtsputils.py` contains the classes for RTSP emitter and
-  player using Gstreamer and VLC respectively.
-- `iceflix/service_announcement.py` contains the needed classes for
-  service announcement events reception and sending.
-- `pyproject.toml` defines the build system used in the project.
-- `run_client` should be a script that can be run directly from the
-  repository root directory. It should be able to run the IceFlix
-  client.
-- `run_iceflix` should be a script that can be run directly from the
-  repository root directory. It should be able to run all the services
-  in background in order to test the whole system.
-- `setup.cfg` is a Python distribution configuration file for
-  Setuptools. It needs to be modified in order to adeccuate to the
-  package name and console handler functions.
+https://github.com/jtaraque/IceFlix
+
+## Instrucciones de uso
+
+1. Ejecutar run_iceflix.
+2. Ejecutar run_client.
+3. En la terminal del paso 2, introducir el Proxy obtenido en la terminal del servicio Main. Ej: Main -t -e 1.1:tcp -h 10.0.2.15 -p 32965 -t 60000
+4. Responder Y/N en función de si queremos acceder como administrador o como usuario normal. El token de administrador es "admin", mientras que el usuario existente tiene como identificador "angel" y contraseña "angel".
+5. Seleccionamos "Iniciar sesión" e introducimos los credenciales del usuario normal.
+6. Seleccionamos "Buscar" seleccionamos "por nombre", introducimos "Messi" y a continuación pulsamos "n" para que la búsqueda no sea exacta. 
+7. Seleccionamos "Reproducir", seleccionamos el id del medio a reproducir y éste se abrirá en el reproductor de video. Cuando queramos salir es importante que no usemos la "X" de la esquina superior derecha, en lugar de eso volveremos a la terminal y seleccionaremos la opción "Parar reproducción".
+8. Para cambiar las tags, en lugar de "Reproducir" seleccionaremos "Editar los tags", volveremos a seleccionar el medio y podremos añadir o eliminar a nuestro gusto.
+9. Para editar su nombre, necesitamos iniciar sesión como administrador, seleccionando la opción "Renombrar medio", avanzaremos como en pasos anteriores y seleccionaremos finalmente el nuevo nombre del medio.

@@ -105,7 +105,7 @@ class ClientApp(Ice.Application):
             error("La ruta introducida no es correcta")
             return None, None
         tile = old_media.split("/")[-1]
-        new_media = "./media"+tile
+        new_media = "./resources"+tile
         if not os.path.exists(new_media):
             return old_media, new_media
         error("Ya existe un archivo con ese nombre en nuestra base de datos")
@@ -113,7 +113,7 @@ class ClientApp(Ice.Application):
     def renameMedia(self, catalog_prx, media):
         """This method is used to change the name of specific media."""
         new_name = input("Introduzca el nuevo nombre del medio: ")
-        new_path = "./media/"+new_name+".mp4"
+        new_path = "./resources/"+new_name+".mp4"
         try:
             catalog_prx.renameTile(media.mediaId, new_name, self.admin_token)
         except IceFlix.Unauthorized:
@@ -292,7 +292,7 @@ class ClientApp(Ice.Application):
                     "Seleccione el medio que desea renombrar: ",
                     list(range(len(media))))
                 new_name = self.renameMedia(catalog_prx, media[media_selection])
-                old_name = "./media/"+media[media_selection].info.name+".mp4"
+                old_name = "./resources/"+media[media_selection].info.name+".mp4"
                 os.rename(old_name, new_name)
         except IceFlix.TemporaryUnavailable:
             error("El servidor de catálogo no se encuentra disponible")
@@ -337,7 +337,7 @@ class ClientApp(Ice.Application):
                     list(range(len(media))))
                 stream_provider_prx = media[media_selection].provider
                 stream_provider_prx.deleteMedia(media[media_selection].mediaId, self.admin_token)
-                media_path = "./media/"+media[media_selection].info.name+".mp4"
+                media_path = "./resources/"+media[media_selection].info.name+".mp4"
                 os.remove(media_path)
         except IceFlix.Unauthorized:
             logging.error("Operación no autorizada")

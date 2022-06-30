@@ -64,7 +64,7 @@ class StreamProvider(IceFlix.StreamProvider):
 
     def readMedia(self):
         """Method to read the system media."""
-        iterator = os.scandir("./media")
+        iterator = os.scandir("./resources")
         while 1:
             try:
                 media = iterator.__next__()
@@ -101,7 +101,7 @@ class StreamProvider(IceFlix.StreamProvider):
             user_name = auth_prx.whois(user_token)
         except IceFlix.Unauthorized:
             raise IceFlix.Unauthorized()
-        media_path = "./media/"+self.media_available[media_id]+".mp4"
+        media_path = "./resources/"+self.media_available[media_id]+".mp4"
         servant_stream_controller = StreamController(user_token, main_prx, media_path)
         stream_controller_prx = current.adapter.addWithUUID(servant_stream_controller)
         stream_controller_prx = IceFlix.StreamControllerPrx.uncheckedCast(stream_controller_prx)
@@ -138,7 +138,7 @@ class StreamProvider(IceFlix.StreamProvider):
             raise IceFlix.Unauthorized()
         media_title = file_name.split("/")[-1]
         media_size = os.path.getsize(file_name)
-        media_path = "./media/"+media_title
+        media_path = "./resources/"+media_title
 
         if not os.path.exists(media_path):
             file_bytes = bytes()

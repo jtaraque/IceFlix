@@ -3,7 +3,9 @@
     By: Juan Tomás Araque Martínez
         and Ángel García Collado
 '''
-
+# pylint: disable=E1101
+# pylint: disable=C0103
+# pylint: disable=W0707
 from distutils.log import error
 import logging
 import uuid
@@ -29,7 +31,6 @@ APP = None
 
 class Main(IceFlix.Main):
     # pylint: disable=W0613
-    # pylint: disable=R0201
     # pylint: disable=W0702
     """Servant for the IceFlix.Main interface."""
 
@@ -85,12 +86,10 @@ class Main(IceFlix.Main):
         return False
 
     # pylint: enable=W0613
-    # pylint: enable=R0201
     # pylint: enable=W0702
 class MainApp(Ice.Application):
     # pylint: disable=W0221
     # pylint: disable=W0613
-    # pylint: disable=R0201
     # pylint: disable=W0702
     """ Ice.Application for a Main service."""
 
@@ -167,7 +166,6 @@ class MainApp(Ice.Application):
 
     # pylint: enable=W0221
     # pylint: enable=W0613
-    # pylint: enable=R0201
     # pylint: enable=W0702
 if __name__ == "__main__":
     APP = MainApp()

@@ -4,6 +4,15 @@
         and Ángel García Collado
 '''
 
+# pylint: disable=C0103
+# pylint: disable=W0613
+# pylint: disable=E1101
+# pylint: disable=C0301
+# pylint: disable=W0231
+# pylint: disable=W0707
+# pylint: disable=W1203
+# pylint: disable=W1514
+
 from datetime import datetime
 from distutils.log import error
 import logging
@@ -27,6 +36,7 @@ from service_announcement import (
 )
 
 def getTopic(communicator, topic_name):
+    """Method to create catalog topic."""
     topic_manager = IceStorm.TopicManagerPrx.checkedCast(
         communicator.propertyToProxy("IceStorm.TopicManager"),
     )
@@ -38,6 +48,7 @@ def getTopic(communicator, topic_name):
     return topic
 
 def createDB(service_id):
+    """Method to sep up the database."""
     data = openDB("./catalogDB/catalogDB.json")
 
     msg = "Catalog " + service_id + " creating DB"
@@ -49,6 +60,7 @@ def createDB(service_id):
     return dest_file
 
 def removeDB(service_id):
+    """Method to delete the database."""
     msg = "Catalog " + service_id + " removing DB"
     logging.info(msg)
     dest_file = "./catalogDB/"+service_id + ".json"
@@ -58,29 +70,35 @@ def removeDB(service_id):
     os.remove(dest_file)
 
 def openDB(path):
+    """Open and load the database."""
     with open(path) as db:
         data = json.load(db)
     return data
 
 def writeDB(path, data):
+    """Writes new info to the database."""
     db = open(path, "w")
     json.dump(data, db, indent=6)
 
 def checkMediaId(media_id, data):
+    """Check if media id exist."""
     if not media_id in data["info"].keys():
         raise IceFlix.WrongMediaId(media_id)
 
 def addTagsList(data, user_name, media_id, tags):
+    """Appends tags to media."""
     try:
         current_tags = data["tags"][user_name][media_id]
     except KeyError:
         current_tags = []
     new_tags = current_tags
     for tag in tags:
-        if not tag in new_tags: new_tags.append(tag)
+        if not tag in new_tags:
+            new_tags.append(tag)
     return new_tags
 
 def removeTagsList(data, user_name, media_id, tags):
+    """Remove tags from media."""
     current_tags = data["tags"][user_name][media_id]
     new_tags = current_tags
     for tag in tags:
@@ -88,7 +106,8 @@ def removeTagsList(data, user_name, media_id, tags):
             new_tags.remove(tag)
     return new_tags
 
-class MediaCatalog(IceFlix.MediaCatalog):    
+class MediaCatalog(IceFlix.MediaCatalog):
+    """MediaCatalog class."""
     def __init__(self):
         self.media_providers = {}
         self.service_id = str(uuid.uuid4())
@@ -113,6 +132,7 @@ class MediaCatalog(IceFlix.MediaCatalog):
         service.updateDB(media_list, self.service_id)
 
     def getUser(self, user_token, current=None):
+        """Obtain the user."""
         main_prx = random.choice(list(self.servant_serv_announ.mains.values()))
         try:
             auth_prx = main_prx.getAuthenticator()
@@ -124,7 +144,7 @@ class MediaCatalog(IceFlix.MediaCatalog):
         return user_name
 
     def getTile(self, media_id, user_token, current=None):
-        
+        """Obtain the media"""
         #Search user name
         if user_token:
             try:
@@ -133,7 +153,7 @@ class MediaCatalog(IceFlix.MediaCatalog):
                 raise IceFlix.TemporaryUnavailable()
             except IceFlix.Unauthorized:
                 raise IceFlix.Unauthorized()
-        
+
         #Search media in DB
         data = openDB(self.path_db)
         try:
@@ -141,7 +161,7 @@ class MediaCatalog(IceFlix.MediaCatalog):
         except IceFlix.WrongMediaId:
             raise IceFlix.WrongMediaId(media_id)
         media_name = data["info"][media_id]
-    
+
         #Search tags
         tags = [""]
         if user_token:
@@ -165,6 +185,7 @@ class MediaCatalog(IceFlix.MediaCatalog):
         return media
 
     def getTilesByName(self, name, exact, current=None):
+        """Obtain media searching by name."""
         data = openDB(self.path_db)
         ids = []
         if exact:
@@ -174,10 +195,11 @@ class MediaCatalog(IceFlix.MediaCatalog):
             return ids
         for media_id in data["info"].keys():
             if name in data["info"][media_id]:
-                ids.append(media_id)        
+                ids.append(media_id)
         return ids
 
     def getTilesByTags(self, tags, include_all_tags, user_token, current=None):
+        """Obtain media searching by tags."""
         #Get user name
         try:
             user_name = self.getUser(user_token)
@@ -194,11 +216,12 @@ class MediaCatalog(IceFlix.MediaCatalog):
                     ids.append(media_id)
             return ids
         for media_id in tags_user.keys():
-                if any(elem in tags_user[media_id] for elem in tags):
-                    ids.append(media_id)
+            if any(elem in tags_user[media_id] for elem in tags):
+                ids.append(media_id)
         return ids
 
     def addTags(self, media_id, tags, user_token, current=None):
+        """Add tags to specific media."""
         #Get user name
         try:
             user_name = self.getUser(user_token)
@@ -222,9 +245,10 @@ class MediaCatalog(IceFlix.MediaCatalog):
             data["tags"][user_name][media_id] = new_tags
 
         writeDB(self.path_db, data)
-        self.catalog_updates_prx.addTags(media_id, tags, user_name,self.service_id)
+        self.catalog_updates_prx.addTags(media_id, tags, user_name, self.service_id)
 
     def removeTags(self, media_id, tags, user_token, current=None):
+        """Remove tags from specific media."""
         #Get user name
         try:
             user_name = self.getUser(user_token)
@@ -237,14 +261,15 @@ class MediaCatalog(IceFlix.MediaCatalog):
             checkMediaId(media_id, data)
         except IceFlix.WrongMediaId:
             raise IceFlix.WrongMediaId(media_id)
-        
+
         #Get tags
         new_tags = removeTagsList(data, user_name, media_id, tags)
         data["tags"][user_name][media_id] = new_tags
         writeDB(self.path_db, data)
-        self.catalog_updates_prx.removeTags(media_id, tags, user_name,self.service_id)
+        self.catalog_updates_prx.removeTags(media_id, tags, user_name, self.service_id)
 
     def renameTile(self, media_id, name, admin_token, current=None):
+        """This method is used to change the name of specific media."""
         #Check admin token
         main_prx = random.choice(list(self.servant_serv_announ.mains.values()))
         is_admin = False
@@ -254,19 +279,20 @@ class MediaCatalog(IceFlix.MediaCatalog):
             error("Servicio main no disponible")
         if not is_admin:
             raise IceFlix.Unauthorized()
-        
+
         #Search medio
         data = openDB(self.path_db)
         try:
             checkMediaId(media_id, data)
         except IceFlix.WrongMediaId:
             raise IceFlix.WrongMediaId(media_id)
-        
+
         data["info"][media_id] = name
         writeDB(self.path_db, data)
         self.catalog_updates_prx.renameTile(media_id, name, self.service_id)
-        
+
     def updateDB(self, catalog_database, service_id, current=None):
+        """Used to update database."""
         # if not service_id in self.servant_serv_announ.known_ids:
         #     raise IceFlix.UnknownService()
         if not self.is_updated:
@@ -286,11 +312,12 @@ class MediaCatalog(IceFlix.MediaCatalog):
             self.is_updated = True
 
 class CatalogUpdates(IceFlix.CatalogUpdates):
-
+    """CatalogUpdates class."""
     def __init__(self) -> None:
         self.servant_serv_announ = None
         self.servant = None
     def renameTile(self, media_id, name, service_id, current=None):
+        """This method is used to change the name of specific media."""
         #Check service
         data = {}
         if service_id in self.servant_serv_announ.known_ids and service_id != self.servant.service_id:
@@ -299,27 +326,28 @@ class CatalogUpdates(IceFlix.CatalogUpdates):
             checkMediaId(media_id, data)
         except IceFlix.WrongMediaId:
             raise IceFlix.WrongMediaId(media_id)
-        
+
         data["info"][media_id] = name
         db = open(self.servant.path_db, "w")
         json.dump(data, db, indent=6)
 
     def addTags(self, media_id, tags, user, service_id, current=None):
-
+        """Add tags to specific media."""
         if service_id in self.servant_serv_announ.known_ids and service_id != self.servant.service_id:
             data = openDB(self.servant.path_db)
         try:
             checkMediaId(media_id, data)
         except IceFlix.WrongMediaId:
             raise IceFlix.WrongMediaId(media_id)
-        
+
         new_tags = addTagsList(data, user, media_id, tags)
-      
+
         #Set tags
         data["tags"][user][media_id] = new_tags
         writeDB(self.servant.path_db, data)
 
     def removeTags(self, media_id, tags, user, service_id, current=None):
+        """Remove tags from specific media."""
         if service_id in self.servant_serv_announ.known_ids and service_id != self.servant.service_id:
             data = openDB(self.servant.path_db)
         try:
@@ -334,11 +362,13 @@ class CatalogUpdates(IceFlix.CatalogUpdates):
         writeDB(self.servant.path_db, data)
 
 class StreamAnnouncements(IceFlix.StreamAnnouncements):
+    """StreamAnnouncements class."""
     def __init__(self):
         self.servant_serv_announ = None
         self.servant = None
 
     def newMedia(self, media_id, initial_name, service_id, current=None):
+        """Method that updates database when uploading new media."""
         if service_id in self.servant_serv_announ.known_ids:
             logging.info(f"Receiving {initial_name}")
             data = openDB(self.servant.path_db)
@@ -347,14 +377,16 @@ class StreamAnnouncements(IceFlix.StreamAnnouncements):
             writeDB(self.servant.path_db, data)
 
     def removedMedia(self, media_id, service_id, current=None):
+        """Method that updates database when removing media."""
         if service_id in self.servant_serv_announ.known_ids:
             logging.info(f"Deleting {service_id}")
             data = openDB(self.servant.path_db)
             del data["info"][media_id]
-            del self.servant.media_providers[media_id] 
+            del self.servant.media_providers[media_id]
             writeDB(self.servant.path_db, data)
 
 class CatalogApp(Ice.Application):
+    """CatalogApp class."""
     def __init__(self):
         self.adapter = None
         self.servant = MediaCatalog()
@@ -389,6 +421,7 @@ class CatalogApp(Ice.Application):
         topic.subscribeAndGetPublisher({}, subscriber_prx)
 
     def run(self, args):
+        """Initialization of catalog."""
         broker = self.communicator()
         self.adapter = broker.createObjectAdapter("Catalog")
         self.adapter.activate()
@@ -421,7 +454,7 @@ class CatalogApp(Ice.Application):
 
         servant_catalog_updates.servant = self.servant
         servant_catalog_updates.servant_serv_announ = self.subscriber
-        
+
 
         servant_stream_announ.servant = self.servant
         servant_stream_announ.servant_serv_announ = self.subscriber

@@ -5,6 +5,7 @@
 '''
 
 from distutils.log import error
+from time import sleep
 import logging
 import uuid
 import random
@@ -13,10 +14,10 @@ import sys
 import string
 import hashlib
 import threading
+import time
 
 import Ice
 import IceStorm
-from iceflix.catalog import StreamAnnouncements
 
 try:
     import IceFlix
@@ -28,11 +29,10 @@ from service_announcement import (
     ServiceAnnouncementsSender,
 )
 from rtsputils import(
-    RTSPEmitter,
-    RTSPPlayer
+    RTSPEmitter
 )
 
-CHUNK_SIZE = 1024
+CHUNK_SIZE = 10
 APP = None
 def getTopic(communicator, topic_name):
     topic_manager = IceStorm.TopicManagerPrx.checkedCast(
@@ -48,8 +48,8 @@ def getTopic(communicator, topic_name):
 class StreamProvider(IceFlix.StreamProvider):
     
     def __init__(self) -> None:
-        self.service_id = str(uuid(uuid.uuid4()))
-        self.media_available = []
+        self.service_id = str(uuid.uuid4())
+        self.media_available = {}
         self.servant_serv_announ = None
         self.stream_announ_prx = None
     def share_data_with(self, service):
@@ -67,7 +67,7 @@ class StreamProvider(IceFlix.StreamProvider):
                 media_id = hashlib.sha256(str(media_content).encode()).hexdigest()
                 media_name = media_path.split("/")[2].split(".")[0]
                 self.stream_announ_prx.newMedia(media_id, media_name, self.service_id)
-                self.media_available.append(media_id)
+                self.media_available[media_id] = media_name
             except StopIteration:
                 break
             except Exception:
@@ -76,7 +76,7 @@ class StreamProvider(IceFlix.StreamProvider):
     def getStream(self, media_id, user_token, current=None):
         #Get authenticator
         authorized = False
-        main_prx = random.choice(self.servant_serv_announ.mains.values())
+        main_prx = random.choice(list(self.servant_serv_announ.mains.values()))
         try:
             auth_prx = main_prx.getAuthenticator()
             authorized = auth_prx.isAuthorized(user_token)
@@ -93,20 +93,20 @@ class StreamProvider(IceFlix.StreamProvider):
             user_name = auth_prx.whois(user_token)
         except IceFlix.Unauthorized:
             raise IceFlix.Unauthorized()
-
-        servant_stream_controller = StreamController(user_token)
-        stream_controller_prx = current.adapter.addwithUUID(servant_stream_controller)
+        media_path = "./media/"+self.media_available[media_id]+".mp4"
+        servant_stream_controller = StreamController(user_token, main_prx, media_path)
+        stream_controller_prx = current.adapter.addWithUUID(servant_stream_controller)
         stream_controller_prx = IceFlix.StreamControllerPrx.uncheckedCast(stream_controller_prx)
 
         servant_revocations = Revocations(user_token, user_name, self.servant_serv_announ)
         revocations_topic = getTopic(APP.communicator(), "Revocations")
-        revocations_prx = current.adapter.addwithUUID(servant_revocations)
+        revocations_prx = current.adapter.addWithUUID(servant_revocations)
         revocations_topic.subscribeAndGetPublisher({}, revocations_prx)
 
         return stream_controller_prx
 
     def isAvailable(self, media_id, current=None):
-        if media_id in self.media_available:
+        if media_id in self.media_available.keys():
             return True
         return False
 
@@ -116,11 +116,11 @@ class StreamProvider(IceFlix.StreamProvider):
         self.readMedia()
 
     def uploadMedia(self, file_name, uploader, admin_token, current=None):
+        logging.info(f"Receiving medio {file_name}")
         is_admin = False
-        main_prx = random.choice(self.servant_serv_announ.mains.values())
+        main_prx = random.choice(list(self.servant_serv_announ.mains.values()))
         try:
-            auth_prx = main_prx.getAuthenticator()
-            is_admin = auth_prx.isAdmin(admin_token)
+            is_admin = main_prx.isAdmin(admin_token)
         except Ice.LocalException:
             error("Servicio principal no disponible")
         if not is_admin:
@@ -128,41 +128,43 @@ class StreamProvider(IceFlix.StreamProvider):
         media_title = file_name.split("/")[-1]
         media_size = os.path.getsize(file_name)
         media_path = "./media/"+media_title
+        
         if not os.path.exists(media_path):
             file_bytes = bytes()
-            file = open(media_path, "wb")
-            while 1:
-                try:
-                    chunk = uploader.receive(CHUNK_SIZE)
-                    file.write(chunk)
-                    file_bytes += chunk
-                except Exception:
-                    raise IceFlix.UploadError()
-                if len(file_bytes) >= media_size:
-                    break
+            with open(media_path, "wb") as file:
+                while True:
+                    try:
+                        chunk = uploader.receive(CHUNK_SIZE)
+                        file.write(chunk)
+                        file_bytes += chunk
+                        if len(file_bytes) >= media_size:
+                            uploader.close()
+                            break
+                    except Exception:
+                        raise IceFlix.UploadError()
             media_id = hashlib.sha256(str(file_bytes).encode()).hexdigest()
             media_name = media_title.split(".")[0]
             self.stream_announ_prx.newMedia(media_id, media_name, self.service_id)
-            self.media_available.append(media_id)
+            self.media_available[media_id] = media_name
+            return media_id
 
     def deleteMedia(self, media_id, admin_token, current=None):
         is_admin = False
-        main_prx = random.choice(self.servant_serv_announ.mains.values())
+        main_prx = random.choice(list(self.servant_serv_announ.mains.values()))
         try:
-            auth_prx = main_prx.getAuthenticator()
-            is_admin = auth_prx.isAdmin(admin_token)
+            is_admin = main_prx.isAdmin(admin_token)
         except Ice.LocalException:
             error("Servicio principal no disponible")
         if not is_admin:
             raise IceFlix.Unauthorized()
-        self.media_available.remove(media_id)
+        del self.media_available[media_id]
         self.stream_announ_prx.removedMedia(media_id, self.service_id)
 
 class StreamController(IceFlix.StreamController):
-    def __init__(self, user_token) -> None:
+    def __init__(self, user_token, main_prx, media) -> None:
         self.emitter = None
-        self.media = None
-        self.main_prx = None
+        self.media = media
+        self.main_prx = main_prx
         self.user_token = user_token
 
     def getSDP(self, user_token, port, current=None):
@@ -175,7 +177,6 @@ class StreamController(IceFlix.StreamController):
 
         if not authorized:
             raise IceFlix.Unauthorized()
-
         self.emitter = RTSPEmitter(self.media, "127.0.0.1", port)
         self.emitter.start()
         return self.emitter.playback_uri
@@ -214,30 +215,55 @@ class Revocations(IceFlix.Revocations):
     def revokeToken(self, user_token, srv_id, current=None):
         if srv_id in self.servant_serv_announ.known_ids:
             if user_token == self.user_token:
-                old_token = self.token
+                old_token = self.user_token
                 self.stream_sync_prx.requestAuthentication()
                 threading.Timer(5.0, None)
-                new_token = self.token
+                new_token = self.user_token
                 if new_token == old_token:
-                    self.stop()
+                    self.stream_sync_prx.stop()
 
     def revokeUser(self, user, srv_id, current=None):
         if srv_id in self.servant_serv_announ.known_ids:
             if user == self.user_name:
-                old_token = self.token
+                old_token = self.user_token
                 self.stream_sync_prx.requestAuthentication()
                 threading.Timer(5.0, None)
-                new_token = self.token
+                new_token = self.user_token
                 if new_token == old_token:
-                    self.stop()
+                    self.stream_sync_prx.stop()
 
 class StreamingApp(Ice.Application):
     def __init__(self):
         self.adapter = None
         self.servant = StreamProvider()
         self.proxy = None
-        self.servant_serv_announcements = None
-        self.serv_announcements_sender = None
+        self.subscriber = None
+        self.announcer = None
+    def setup_announcements(self):
+        """Configure the announcements sender and listener."""
+
+        communicator = self.communicator()
+        topic_manager = IceStorm.TopicManagerPrx.checkedCast(
+            communicator.propertyToProxy("IceStorm.TopicManager"),
+        )
+
+        try:
+            topic = topic_manager.create("ServiceAnnouncements")
+        except IceStorm.TopicExists:
+            topic = topic_manager.retrieve("ServiceAnnouncements")
+
+        self.announcer = ServiceAnnouncementsSender(
+            topic,
+            self.servant.service_id,
+            self.proxy,
+        )
+
+        self.subscriber = ServiceAnnouncementsListener(
+            self.servant, self.servant.service_id, IceFlix.StreamProviderPrx
+        )
+
+        subscriber_prx = self.adapter.addWithUUID(self.subscriber)
+        topic.subscribeAndGetPublisher({}, subscriber_prx)
     def run(self, args):
         broker = self.communicator()
         self.adapter = broker.createObjectAdapter("Streaming")
@@ -249,17 +275,18 @@ class StreamingApp(Ice.Application):
         stream_announcements_pub = stream_announcements_topic.getPublisher()
         stream_announcements_pub = IceFlix.StreamAnnouncementsPrx.uncheckedCast(stream_announcements_pub)
         #Service Announcements
-        serv_announcements_topics = getTopic(broker, "ServiceAnnouncements")
-        self.servant_serv_announcements = ServiceAnnouncementsListener(self.servant,self.servant.service_id, IceFlix.AuthenticatorPrx)
-        serv_announcements_prx = self.adapter.addWithUUID(self.servant_serv_announcements)
-        serv_announcements_topics.subscribeAndGetPublisher({}, serv_announcements_prx)
-
         self.proxy = self.adapter.add(self.servant, broker.stringToIdentity("StreamProvider"))
-        self.serv_announcements_sender = ServiceAnnouncementsSender(serv_announcements_topics,self.servant.service_id, self.proxy)
+        self.setup_announcements()
+        self.announcer.start_service
 
-        self.servant.servant_serv_announ = self.servant_serv_announcements
+        self.servant.servant_serv_announ = self.subscriber
         self.servant.stream_announ_prx = stream_announcements_pub
-        
+
+        time.sleep(2)
+        self.announcer.announce()
+        self.servant.readMedia()
+        logging.info(self.proxy)
+
         self.shutdownOnInterrupt()
         broker.waitForShutdown()
         return 0

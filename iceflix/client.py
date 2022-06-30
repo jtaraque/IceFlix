@@ -20,6 +20,7 @@ from rtsputils import(
     RTSPPlayer
 )
 
+logging.basicConfig(level=logging.INFO)
 try:
     import IceFlix
 except ImportError:
@@ -28,16 +29,6 @@ except ImportError:
 
 RECONNECTION_ATTEMPTS = 3
 
-def getTopic(communicator, topic_name):
-    topic_manager = IceStorm.TopicManagerPrx.checkedCast(
-        communicator.propertyToProxy("IceStorm.TopicManager"),
-    )
-    try:
-        topic = topic_manager.create(topic_name)
-    except IceStorm.TopicExists:
-        topic = topic_manager.retrieve(topic_name)
-
-    return topic
 
 class StreamSync(IceFlix.StreamSync):
     def __init__(self, stream_controller_prx, client) -> None:
@@ -67,7 +58,8 @@ class MediaUploader(IceFlix.MediaUploader):
     def __init__(self, file):
         logging.debug(f"Serving file: {file}")
         self._filename_ = file
-        self._fd_ = open(file, "rb") 
+        self._fd_ = open(file, "rb")
+        logging.info("Lee")
     
     def receive(self, size, current=None):
         chunk = self._fd_.read(size)
@@ -84,7 +76,7 @@ class ClientApp(Ice.Application):
         self.adapter = None
         self.main_prx = None
         self.admin_token = None
-        self.user = {}
+        self.user = {"token":"", "user": "", "pass_encoded":""}
         self.player = None
         self.stream_controller_prx = None
 
@@ -100,7 +92,8 @@ class ClientApp(Ice.Application):
         error("Ya existe un archivo con ese nombre en nuestra base de datos")
         
     def renameMedia(self, catalog_prx, media):
-        new_name = input("Introduzca el nuevo nombre del medio")
+        new_name = input("Introduzca el nuevo nombre del medio: ")
+        new_path = "./media/"+new_name+".mp4"
         try:
             catalog_prx.renameTile(media.mediaId, new_name, self.admin_token)
         except IceFlix.Unauthorized:
@@ -109,25 +102,28 @@ class ClientApp(Ice.Application):
             logging.error("El id del medio proporcionado no es correcto")
         except Ice.NotRegisteredException:
             logging.error("Error durante el cambio de nombre")
-        return new_name
+        return new_path
 
     def play(self, media):
         stream_provider_prx = media.provider
-        stream_controller_prx = stream_provider_prx.getStream(
+        try:
+            self.stream_controller_prx = stream_provider_prx.getStream(
             media.mediaId, self.user["token"])
-        uri = stream_controller_prx.getSDP(self.user["token"], 8080)
-        servant_stream_sync = StreamSync(stream_controller_prx, self)
-        sync_topic = self.getTopic(
-            self.broker, "StreamSync")
+        except AttributeError:
+            error("Servicio de streaming no disponible")
+        uri = self.stream_controller_prx.getSDP(self.user["token"], 8080)
+        servant_stream_sync = StreamSync(self.stream_controller_prx, self)
+        sync_topic = self.getTopic("StreamSync")
         sync_prx = self.adapter.addWithUUID(servant_stream_sync)
         sync_prx = IceFlix.RevocationsPrx.uncheckedCast(sync_prx)
         sync_topic.subscribeAndGetPublisher({}, sync_prx)
         logging.info(uri)
         self.player = RTSPPlayer()
         self.player.play(uri)
+        logging.info("Reproduciendo medio " + media.info.name)
 
     def edit_tags(self, catalog_prx, media):
-        selection = self.numQuestion(
+        selection = self.num_question(
             "¿Qué quiere hacer?\n1. Añadir tags\n2. Eliminar tags\n", list(range(1, 3)))
         if selection == 1:
             new_tags = input("Introduzca los nuevo tags: ")
@@ -175,6 +171,7 @@ class ClientApp(Ice.Application):
 
     def search_by_tile(self, catalog_prx):
         media = []
+        ids_media = []
         tile = input("Introduce el título del medio: ")
         exact = self.yesnoQuestion("¿Quiere que la búsqueda sea exacta? [y/n]: ")
         try:
@@ -189,11 +186,12 @@ class ClientApp(Ice.Application):
 
     def search_by_tags(self, catalog_prx):
         media = []
+        ids_media = []
         tags = input("Introduzca los tags de búsqueda: ")
         tags_list = tags.split(", ")
         include_all_tags = self.yesnoQuestion("¿Quiere que el medio contenga todos los tags? [y/n]")
         try:
-            ids_media = catalog_prx.getTilesByTags(tags_list, include_all_tags, self.user["toker"])
+            ids_media = catalog_prx.getTilesByTags(tags_list, include_all_tags, self.user["token"])
         except IceFlix.Unauthorized:
             error("Token de usuario incorrecto")
         except Ice.LocalException:
@@ -205,16 +203,15 @@ class ClientApp(Ice.Application):
             media = self.search_by_id(catalog_prx, ids_media)
         return media
 
-    def numQuestion(self, msg, range):
+    def num_question(self, msg, range):
         num = input(msg)
         while True:
             if not num.isdigit():
                 num = input("Introduzca un número\n")
-            if num not in range:
+            if num not in str(range):
                 num = input("Introduzca un valor válido\n")
-            if num.isdigit() and num in range:
-                break
-        return int(num)
+            if num.isdigit() and num in str(range):
+                return int(num)
 
     def admin1(self):
         print("Indique el usuario y la contraseña")
@@ -261,11 +258,11 @@ class ClientApp(Ice.Application):
             media = self.search_by_tile(catalog_prx)
             if len(media) > 0:
                 self.show_media(media)
-                media_selection = self.numQuestion(
-                    "Seleccione el medio que desea renombrar",
+                media_selection = self.num_question(
+                    "Seleccione el medio que desea renombrar: ",
                     list(range(len(media))))
                 new_name = self.renameMedia(catalog_prx, media[media_selection])
-                old_name = "./media"+media[media_selection].info.name+".mp4"
+                old_name = "./media/"+media[media_selection].info.name+".mp4"
                 os.rename(old_name,new_name)
         except IceFlix.TemporaryUnavailable:
             error("El servidor de catálogo no se encuentra disponible")
@@ -281,12 +278,13 @@ class ClientApp(Ice.Application):
         if old_path and new_path:
             servant_uploader = MediaUploader(old_path)
             uploader_prx = self.adapter.addWithUUID(servant_uploader)
-            uploader_prx = IceFlix.MediaUploaderPrx.uncheckedCast(uploader_prx)
-            stream_provider_prx_str = input("Introduzca un proxy válido de Stream Provider")
+            uploader_prx = IceFlix.MediaUploaderPrx.checkedCast(uploader_prx)
+            stream_provider_prx_str = input("Introduzca un proxy válido de Stream Provider: ")
             stream_provider_prx = self.broker.stringToProxy(stream_provider_prx_str)
             stream_provider_prx = IceFlix.StreamProviderPrx.uncheckedCast(stream_provider_prx)
             try:
                 stream_provider_prx.uploadMedia(old_path, uploader_prx, self.admin_token)
+                logging.info("Medio subido con éxito")
             except IceFlix.UploadError:
                 logging.error("Error al subir el medio")
             except IceFlix.Unauthorized:
@@ -302,12 +300,12 @@ class ClientApp(Ice.Application):
             media = self.search_by_tile(catalog_prx)
             if len(media) > 0:
                 self.show_media(media)
-                media_selection = self.numQuestion(
-                    "Seleccione el medio que desea eliminar",
+                media_selection = self.num_question(
+                    "Seleccione el medio que desea eliminar: ",
                     list(range(len(media))))
                 stream_provider_prx = media[media_selection].provider
                 stream_provider_prx.deleteMedia(media[media_selection].mediaId, self.admin_token)
-                media_path = "./media"+media[media_selection].info.name+".mp4"
+                media_path = "./media/"+media[media_selection].info.name+".mp4"
                 os.remove(media_path)
         except IceFlix.Unauthorized:
             logging.error("Operación no autorizada")
@@ -331,18 +329,16 @@ class ClientApp(Ice.Application):
 
         try:
             auth_prx = self.main_prx.getAuthenticator()
-            self.user["token"] = auth_prx.refreshAuthentication(user, pass_encoded)
+            self.user["token"] = auth_prx.refreshAuthorization(user, pass_encoded)
             if self.user["token"]:
                 logging.info("Se ha iniciado sesión con éxito")
                 self.user["user"] = user
                 self.user["pass_encoded"] = pass_encoded
-
                 servant_revocations = Revocations(self)
-                revocations_topic = getTopic(self.broker, "Revocations")
+                revocations_topic = self.getTopic("Revocations")
                 revocations_prx = self.adapter.addWithUUID(servant_revocations)
                 revocations_prx = IceFlix.RevocationsPrx.uncheckedCast(revocations_prx)
                 revocations_topic.subscribeAndGetPublisher({}, revocations_prx)
-
         except IceFlix.TemporaryUnavailable:
             error("Servicio de autenticación no disponible")
         except IceFlix.Unauthorized:
@@ -358,7 +354,7 @@ class ClientApp(Ice.Application):
         try:
             catalog_prx = self.main_prx.getCatalog()
             if self.user["token"]:
-                type_search = self.numQuestion(
+                type_search = self.num_question(
                     "¿Qué búsqueda desea realizar?\n1. Por nombre\n2. Por tags\n",
                     list(range(1, 3)))
                 if type_search == 1:
@@ -370,16 +366,16 @@ class ClientApp(Ice.Application):
             if len(media) > 0:
                 self.show_media(media)
                 if self.user["token"]:
-                    selection = self.numQuestion(
+                    selection = self.num_question(
                         "¿Qué desea hacer?\n1. Editar los tags\n2. Reproducir\n3. Nada\n",
                         list(range(1, 4)))
                     if selection == 1:
-                        media_selection = self.numQuestion(
+                        media_selection = self.num_question(
                             "Seleccione el medio del que quiere editar sus tags\n",
                             list(range(len(media))))
                         self.edit_tags(catalog_prx, media[media_selection])
                     elif selection == 2:
-                        media_selection = self.numQuestion(
+                        media_selection = self.num_question(
                             "Seleccione el medio que quiere reproducir\n",
                             list(range(len(media))))
                         self.play(media[media_selection])
@@ -398,7 +394,7 @@ class ClientApp(Ice.Application):
 
     def opcion3(self):
         """Method to change the reconnection configuration"""
-        attempts = self.numQuestion(
+        attempts = self.num_question(
                         "Introduzca el número de intentos de reconexión con el servidor principal (max 10): ",
                         str(list(range(10))))
         RECONNECTION_ATTEMPTS = attempts
@@ -433,14 +429,17 @@ class ClientApp(Ice.Application):
                 main_prx_new = IceFlix.MainPrx.uncheckedCast(main_prx)
             except Exception:
                 error(f"Error en el intento de reconexión. {attempts}/{RECONNECTION_ATTEMPTS}")
-            i += 1
+            attempts += 1
         return main_prx_new
 
     def connectToMain(self):
-        main_prx = input("Para comenzar introduzca un  proxy del servicio principal")
-        main_prx = self.broker.stringToProxy(main_prx)
+        main_prx = input("Para comenzar introduzca un  proxy del servicio principal\n")
         try:
-            self.main_prx = IceFlix.MainPrx.unchekedCast(main_prx)
+            main_prx = self.broker.stringToProxy(main_prx)
+            self.main_prx = IceFlix.MainPrx.checkedCast(main_prx)
+        except Ice.ProxyParseException:
+            error("Proxy incorrecto")
+            raise SystemExit
         except:
             error("Error al conectar con el servidor principal")
             self.main_prx = self.reconnect(self.main_prx)
@@ -502,6 +501,17 @@ class ClientApp(Ice.Application):
             raise ValueError
         return int(opcion)
 
+    def getTopic(self, topic_name):
+        topic_manager = IceStorm.TopicManagerPrx.checkedCast(
+            self.broker.propertyToProxy("IceStorm.TopicManager"),
+        )
+        try:
+            topic = topic_manager.create(topic_name)
+        except IceStorm.TopicExists:
+            topic = topic_manager.retrieve(topic_name)
+
+        return topic
+
     def adminMenu(self):
         #Token
         self.getAdminToken()
@@ -517,7 +527,7 @@ class ClientApp(Ice.Application):
                 self.admin3()
             elif opcion == 4:
                 self.admin4()
-            else:
+            elif opcion == 5:
                 self.admin5()
 
     def normalMenu(self):
@@ -532,7 +542,7 @@ class ClientApp(Ice.Application):
                 self.opcion3()
             elif opcion == 4:
                 self.opcion4()
-            else:
+            elif opcion == 5:
                 self.opcion5()
 
     def run(self, args):

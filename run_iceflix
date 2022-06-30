@@ -1,0 +1,15 @@
+# -*- mode: bash -*-
+
+function start_icestorm {
+    mkdir -p /tmp/icestorm
+    icebox --Ice.Config=./configs/icebox.config &
+}
+
+
+
+#!/bin/bash
+start_icestorm
+gnome-terminal --tab -- bash -c "python3 ./iceflix/main.py --Ice.Config=./configs/main.config admin; exec bash" && 
+gnome-terminal --tab -- bash -c "python3 ./iceflix/authenticator.py --Ice.Config=./configs/authenticator.config; exec bash" && 
+gnome-terminal --tab -- bash -c "python3 ./iceflix/catalog.py --Ice.Config=./configs/catalog.config; exec bash" && 
+gnome-terminal --tab -- bash -c "python3 ./iceflix/streaming.py --Ice.Config=./configs/streaming.config; exec bash"

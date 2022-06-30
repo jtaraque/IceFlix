@@ -1,0 +1,1 @@
+gnome-terminal --tab --active -- bash -c "python3 ./iceflix/client.py --Ice.Config=./configs/client.config; exec bash"
